@@ -53,6 +53,7 @@ export function floodFillCount(
 ): number {
   const visited = new Set<string>();
   const queue: Coord[] = [start];
+  let queueIndex = 0;
   const startKey = `${start.x},${start.y}`;
 
   if (blocked.has(startKey)) {
@@ -61,8 +62,8 @@ export function floodFillCount(
 
   visited.add(startKey);
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex++];
     for (const neighbor of getAdjacentCells(current)) {
       if (
         neighbor.x >= 0 &&
