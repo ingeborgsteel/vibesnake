@@ -6,8 +6,8 @@ export function info(): InfoResponse {
   return {
     apiversion: "1",
     author: "Bubblun",
-    color: "#ead00a",
-    head: "smart-caterpillar",
+    color: "#FFB6C1",
+    head: "do-sammy",
     tail: "coffee",
   };
 }
