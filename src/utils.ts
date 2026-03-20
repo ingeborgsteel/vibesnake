@@ -45,6 +45,44 @@ export function getRelativePosition(
   }
 }
 
+export function floodFillCount(
+  start: Coord,
+  blocked: Set<string>,
+  boardWidth: number,
+  boardHeight: number
+): number {
+  const visited = new Set<string>();
+  const queue: Coord[] = [start];
+  let queueIndex = 0;
+  const startKey = `${start.x},${start.y}`;
+
+  if (blocked.has(startKey)) {
+    return 0;
+  }
+
+  visited.add(startKey);
+
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex++];
+    for (const neighbor of getAdjacentCells(current)) {
+      if (
+        neighbor.x >= 0 &&
+        neighbor.x < boardWidth &&
+        neighbor.y >= 0 &&
+        neighbor.y < boardHeight
+      ) {
+        const key = `${neighbor.x},${neighbor.y}`;
+        if (!visited.has(key) && !blocked.has(key)) {
+          visited.add(key);
+          queue.push(neighbor);
+        }
+      }
+    }
+  }
+
+  return visited.size;
+}
+
 export function getOpposite(direction?: string | null) {
   switch (direction) {
     case "up":

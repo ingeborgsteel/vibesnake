@@ -1,5 +1,5 @@
 import { Coord, GameState, InfoResponse, MoveResponse } from "./types";
-import { getAdjacentCells, hasJustEaten, manhattenDistance } from "./utils";
+import { floodFillCount, getAdjacentCells, hasJustEaten, manhattenDistance } from "./utils";
 
 export function info(): InfoResponse {
   console.log("INFO");
@@ -130,15 +130,35 @@ export function move(gameState: GameState): MoveResponse {
     right: { x: myHead.x + 1, y: myHead.y },
   };
 
+  // Step 3.5: Flood-fill space awareness — avoid moves leading into small pockets
+  const blocked = new Set<string>();
+  gameState.board.snakes.forEach((snake) => {
+    const segments = hasJustEaten(snake) ? snake.body : snake.body.slice(0, -1);
+    segments.forEach((seg) => blocked.add(`${seg.x},${seg.y}`));
+  });
+
+  const moveSpace: { [key: string]: number } = {};
+  safeMoves.forEach((m) => {
+    moveSpace[m] = floodFillCount(nextPositions[m], blocked, boardWidth, boardHeight);
+  });
+
+  // Discard moves where reachable space is less than snake's body length (sure trap)
+  const spaceSafeMoves = safeMoves.filter((m) => moveSpace[m] >= myLength);
+  // If all moves are traps, fall back to the one with the most space
+  const floodFilteredMoves =
+    spaceSafeMoves.length > 0
+      ? spaceSafeMoves
+      : [...safeMoves].sort((a, b) => moveSpace[b] - moveSpace[a]).slice(0, 1);
+
   // Step 4: Prefer moves that avoid hazard squares when possible
   const hazardSet = new Set(
     gameState.board.hazards.map((h) => `${h.x},${h.y}`)
   );
-  const nonHazardMoves = safeMoves.filter(
+  const nonHazardMoves = floodFilteredMoves.filter(
     (m) =>
       !hazardSet.has(`${nextPositions[m].x},${nextPositions[m].y}`)
   );
-  const candidateMoves = nonHazardMoves.length > 0 ? nonHazardMoves : safeMoves;
+  const candidateMoves = nonHazardMoves.length > 0 ? nonHazardMoves : floodFilteredMoves;
 
   // Step 5: Attack mode - if we are strictly the longest snake, hunt a significantly shorter
   // opponent. Require at least a 2-unit size advantage so that even if the target eats food
@@ -206,8 +226,10 @@ export function move(gameState: GameState): MoveResponse {
     }
   }
 
-  let nextMove =
-    candidateMoves[Math.floor(Math.random() * candidateMoves.length)];
+  // Default: pick the candidate move with the most open space
+  let nextMove = candidateMoves.reduce((best, m) =>
+    (moveSpace[m] ?? 0) > (moveSpace[best] ?? 0) ? m : best
+  , candidateMoves[0]);
 
   if (attackTarget !== undefined) {
     const attackMoves: string[] = [];
