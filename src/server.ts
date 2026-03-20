@@ -127,8 +127,10 @@ export function move(gameState: GameState): MoveResponse {
   );
   const candidateMoves = nonHazardMoves.length > 0 ? nonHazardMoves : safeMoves;
 
-  // Step 5: Attack mode - if we are strictly the longest snake, hunt a shorter opponent
-  // Abort automatically each turn if we are no longer the longest (re-evaluated every call)
+  // Step 5: Attack mode - if we are strictly the longest snake, hunt a significantly shorter
+  // opponent. Require at least a 2-unit size advantage so that even if the target eats food
+  // before the collision the resulting head-to-head still favours us (and never ties).
+  // Abort automatically each turn if we are no longer the longest (re-evaluated every call).
   const isStrictlyLongest = gameState.board.snakes
     .filter((s) => s.id !== gameState.you.id)
     .every((s) => s.length < myLength);
@@ -137,12 +139,12 @@ export function move(gameState: GameState): MoveResponse {
   let attackTarget: Coord | undefined;
 
   if (isStrictlyLongest) {
-    // Find the closest shorter snake within attack range
+    // Find the closest snake that is at least 2 units shorter within attack range
     let closestOpponent: (typeof gameState.board.snakes)[0] | undefined;
     let minAttackDist = Infinity;
 
     gameState.board.snakes
-      .filter((s) => s.id !== gameState.you.id && s.length < myLength)
+      .filter((s) => s.id !== gameState.you.id && s.length + 1 < myLength)
       .forEach((opp) => {
         const dist = manhattenDistance(myHead, opp.head);
         if (dist <= ATTACK_RANGE && dist < minAttackDist) {
