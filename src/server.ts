@@ -208,6 +208,45 @@ export function move(gameState: GameState): MoveResponse {
     }
   }
 
+  // Step 5.5: Defense mode - if a close snake is longer than us, flee from it
+  const DEFENSE_RANGE = 4;
+  let fleeFrom: Coord | undefined;
+  let minThreatDist = Infinity;
+
+  gameState.board.snakes
+    .filter((s) => s.id !== gameState.you.id && s.length > myLength)
+    .forEach((opp) => {
+      const dist = manhattenDistance(myHead, opp.head);
+      if (dist <= DEFENSE_RANGE && dist < minThreatDist) {
+        minThreatDist = dist;
+        fleeFrom = opp.head;
+      }
+    });
+
+  if (fleeFrom !== undefined) {
+    const fleeMoves: string[] = [];
+    if (myHead.x < fleeFrom.x) {
+      fleeMoves.push("left");
+    } else if (myHead.x > fleeFrom.x) {
+      fleeMoves.push("right");
+    }
+    if (myHead.y < fleeFrom.y) {
+      fleeMoves.push("down");
+    } else if (myHead.y > fleeFrom.y) {
+      fleeMoves.push("up");
+    }
+
+    const safeFleeMoves = fleeMoves.filter((m) =>
+      candidateMoves.includes(m)
+    );
+    if (safeFleeMoves.length > 0) {
+      nextMove =
+        safeFleeMoves[Math.floor(Math.random() * safeFleeMoves.length)];
+      console.log(`MOVE ${gameState.turn}: ${nextMove} (DEFENSE - fleeing)`);
+      return { move: nextMove, shout: "Retreating!" };
+    }
+  }
+
   // Step 6: Move towards the closest food
   const food = gameState.board.food;
   let closestFood: Coord | undefined;
