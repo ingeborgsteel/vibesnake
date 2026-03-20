@@ -79,11 +79,24 @@ export function move(gameState: GameState): MoveResponse {
     });
   });
 
-  // Step 3: Avoid head-to-head collisions with snakes of equal or greater length
+  // Step 3: Avoid head-to-head collisions with snakes of equal or greater length.
+  // Also avoid opponents that are 1 unit shorter when food is adjacent to their
+  // head, because they could eat and become equal length — causing a mutual death tie.
+  const foodCoordSet = new Set(
+    gameState.board.food.map((f) => `${f.x},${f.y}`)
+  );
+
   gameState.board.snakes
     .filter((snake) => snake.id !== gameState.you.id)
     .forEach((opponent) => {
-      if (opponent.length >= myLength) {
+      const isDangerous =
+        opponent.length >= myLength ||
+        (opponent.length === myLength - 1 &&
+          getAdjacentCells(opponent.head).some((c) =>
+            foodCoordSet.has(`${c.x},${c.y}`)
+          ));
+
+      if (isDangerous) {
         // Cells the opponent's head could move to next turn
         getAdjacentCells(opponent.head).forEach((cell) => {
           if (myHead.x + 1 === cell.x && myHead.y === cell.y) {
@@ -166,6 +179,18 @@ export function move(gameState: GameState): MoveResponse {
     gameState.board.snakes
       .filter((s) => s.id !== gameState.you.id && s.length + 1 < myLength)
       .forEach((opp) => {
+        // If food is adjacent to the opponent's head, they could eat and grow,
+        // so require an extra unit of advantage to guarantee a safe win.
+        const foodNearOpp = getAdjacentCells(opp.head).some((c) =>
+          foodCoordSet.has(`${c.x},${c.y}`)
+        );
+        if (foodNearOpp && opp.length + 2 >= myLength) {
+          console.log(
+            `MOVE ${gameState.turn}: ATTACK ABORTED on snake ${opp.id} - food near opponent, tie possible`
+          );
+          return; // skip this opponent
+        }
+
         const dist = manhattenDistance(myHead, opp.head);
         if (dist <= ATTACK_RANGE && dist < minAttackDist) {
           minAttackDist = dist;
@@ -227,6 +252,45 @@ export function move(gameState: GameState): MoveResponse {
         safeAttackMoves[Math.floor(Math.random() * safeAttackMoves.length)];
       console.log(`MOVE ${gameState.turn}: ${nextMove} (ATTACK)`);
       return { move: nextMove, shout: "Attacking!" };
+    }
+  }
+
+  // Step 5.5: Defense mode - if a close snake is longer than us, flee from it
+  const DEFENSE_RANGE = 4;
+  let fleeFrom: Coord | undefined;
+  let minThreatDist = Infinity;
+
+  gameState.board.snakes
+    .filter((s) => s.id !== gameState.you.id && s.length > myLength)
+    .forEach((opp) => {
+      const dist = manhattenDistance(myHead, opp.head);
+      if (dist <= DEFENSE_RANGE && dist < minThreatDist) {
+        minThreatDist = dist;
+        fleeFrom = opp.head;
+      }
+    });
+
+  if (fleeFrom !== undefined) {
+    const fleeMoves: string[] = [];
+    if (myHead.x < fleeFrom.x) {
+      fleeMoves.push("left");
+    } else if (myHead.x > fleeFrom.x) {
+      fleeMoves.push("right");
+    }
+    if (myHead.y < fleeFrom.y) {
+      fleeMoves.push("down");
+    } else if (myHead.y > fleeFrom.y) {
+      fleeMoves.push("up");
+    }
+
+    const safeFleeMoves = fleeMoves.filter((m) =>
+      candidateMoves.includes(m)
+    );
+    if (safeFleeMoves.length > 0) {
+      nextMove =
+        safeFleeMoves[Math.floor(Math.random() * safeFleeMoves.length)];
+      console.log(`MOVE ${gameState.turn}: ${nextMove} (DEFENSE - fleeing)`);
+      return { move: nextMove, shout: "Retreating!" };
     }
   }
 
