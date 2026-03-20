@@ -3,6 +3,24 @@ import { Battlesnake, Coord } from "./types";
 export const manhattenDistance = (myHead: Coord, snakeHead: Coord) =>
   Math.abs(myHead.x - snakeHead.x) + Math.abs(myHead.y - snakeHead.y);
 
+export function hasJustEaten(snake: Battlesnake): boolean {
+  const body = snake.body;
+  return (
+    body.length >= 2 &&
+    body[body.length - 1].x === body[body.length - 2].x &&
+    body[body.length - 1].y === body[body.length - 2].y
+  );
+}
+
+export function getAdjacentCells(coord: Coord): Coord[] {
+  return [
+    { x: coord.x + 1, y: coord.y },
+    { x: coord.x - 1, y: coord.y },
+    { x: coord.x, y: coord.y + 1 },
+    { x: coord.x, y: coord.y - 1 },
+  ];
+}
+
 export function getRelativePosition(
   myHead: Coord,
   targetSnake: Battlesnake

@@ -1,5 +1,5 @@
 import { Coord, GameState, InfoResponse, MoveResponse } from "./types";
-import { getOpposite, getRelativePosition, manhattenDistance } from "./utils";
+import { getAdjacentCells, hasJustEaten, manhattenDistance } from "./utils";
 
 export function info(): InfoResponse {
   console.log("INFO");
@@ -21,8 +21,6 @@ export function end(gameState: GameState): void {
 }
 
 export function move(gameState: GameState): MoveResponse {
-  const mode: "food" | "attack" | "defend" = "food";
-
   let isMoveSafe: { [key: string]: boolean } = {
     up: true,
     down: true,
@@ -30,10 +28,13 @@ export function move(gameState: GameState): MoveResponse {
     right: true,
   };
 
-  // Step 0: Don't move backwards
   const myHead = gameState.you.head;
   const myNeck = gameState.you.body[1];
+  const myLength = gameState.you.length;
+  const boardWidth = gameState.board.width;
+  const boardHeight = gameState.board.height;
 
+  // Step 0: Don't move backwards
   if (myNeck.x < myHead.x) {
     isMoveSafe.left = false;
   } else if (myNeck.x > myHead.x) {
@@ -45,9 +46,6 @@ export function move(gameState: GameState): MoveResponse {
   }
 
   // Step 1: Prevent moving out of bounds
-  const boardWidth = gameState.board.width;
-  const boardHeight = gameState.board.height;
-
   if (myHead.x === 0) {
     isMoveSafe.left = false;
   }
@@ -61,66 +59,89 @@ export function move(gameState: GameState): MoveResponse {
     isMoveSafe.up = false;
   }
 
-  // Step 2: Prevent colliding with yourself
-  const myBody = gameState.you.body;
-  myBody.forEach((segment) => {
-    if (myHead.x === segment.x - 1 && myHead.y === segment.y) {
-      isMoveSafe.right = false; // My body is to the right
-    }
-    if (myHead.x === segment.x + 1 && myHead.y === segment.y) {
-      isMoveSafe.left = false; // My body is to the left
-    }
-    if (myHead.y === segment.y - 1 && myHead.x === segment.x) {
-      isMoveSafe.up = false; // My body is above
-    }
-    if (myHead.y === segment.y + 1 && myHead.x === segment.x) {
-      isMoveSafe.down = false; // My body is below
-    }
+  // Step 2: Prevent colliding with any snake's body (own or opponents)
+  // The tail will move away next turn unless the snake just ate (last two segments identical)
+  gameState.board.snakes.forEach((snake) => {
+    const segments = hasJustEaten(snake) ? snake.body : snake.body.slice(0, -1);
+    segments.forEach((segment) => {
+      if (myHead.x + 1 === segment.x && myHead.y === segment.y) {
+        isMoveSafe.right = false;
+      }
+      if (myHead.x - 1 === segment.x && myHead.y === segment.y) {
+        isMoveSafe.left = false;
+      }
+      if (myHead.y + 1 === segment.y && myHead.x === segment.x) {
+        isMoveSafe.up = false;
+      }
+      if (myHead.y - 1 === segment.y && myHead.x === segment.x) {
+        isMoveSafe.down = false;
+      }
+    });
   });
+
+  // Step 3: Avoid head-to-head collisions with snakes of equal or greater length
+  gameState.board.snakes
+    .filter((snake) => snake.id !== gameState.you.id)
+    .forEach((opponent) => {
+      if (opponent.length >= myLength) {
+        // Cells the opponent's head could move to next turn
+        getAdjacentCells(opponent.head).forEach((cell) => {
+          if (myHead.x + 1 === cell.x && myHead.y === cell.y) {
+            isMoveSafe.right = false;
+          }
+          if (myHead.x - 1 === cell.x && myHead.y === cell.y) {
+            isMoveSafe.left = false;
+          }
+          if (myHead.y + 1 === cell.y && myHead.x === cell.x) {
+            isMoveSafe.up = false;
+          }
+          if (myHead.y - 1 === cell.y && myHead.x === cell.x) {
+            isMoveSafe.down = false;
+          }
+        });
+      }
+    });
 
   const safeMoves = Object.keys(isMoveSafe).filter((key) => isMoveSafe[key]);
 
-  if (safeMoves.length == 0) {
+  if (safeMoves.length === 0) {
     console.log(`MOVE ${gameState.turn}: No safe moves detected! Moving down`);
     return { move: "down", shout: "Take down Magnus!" };
   }
 
-  // Step 4: Move towards the closest food
+  // Map each safe move to its resulting coordinate
+  const nextPositions: { [key: string]: Coord } = {
+    up: { x: myHead.x, y: myHead.y + 1 },
+    down: { x: myHead.x, y: myHead.y - 1 },
+    left: { x: myHead.x - 1, y: myHead.y },
+    right: { x: myHead.x + 1, y: myHead.y },
+  };
+
+  // Step 4: Prefer moves that avoid hazard squares when possible
+  const hazardSet = new Set(
+    gameState.board.hazards.map((h) => `${h.x},${h.y}`)
+  );
+  const nonHazardMoves = safeMoves.filter(
+    (m) =>
+      !hazardSet.has(`${nextPositions[m].x},${nextPositions[m].y}`)
+  );
+  const candidateMoves = nonHazardMoves.length > 0 ? nonHazardMoves : safeMoves;
+
+  // Step 5: Move towards the closest food
   const food = gameState.board.food;
   let closestFood: Coord | undefined;
   let minDistance = Infinity;
 
   food.forEach((f) => {
-    const distance = Math.abs(myHead.x - f.x) + Math.abs(myHead.y - f.y);
+    const distance = manhattenDistance(myHead, f);
     if (distance < minDistance) {
       minDistance = distance;
       closestFood = f;
     }
   });
 
-  let nextMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
-  const currentHealth = gameState.you.health;
-  const mappedOpponents = gameState.board.snakes
-    .filter((snakes) => snakes.id !== gameState.you.id)
-    .map((sn) => {
-      return {
-        health: sn.health,
-        head: sn.head,
-        id: sn.id,
-        relativeToMe: getRelativePosition(gameState.you.head, sn),
-        distance: manhattenDistance(myHead, sn.head),
-      };
-    });
-  // const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health)[0];
-  // const closest = mappedOpponents.toSorted(
-  //   (a, b) => b.distance - a.distance
-  // )[0];
-  // if (closest.distance < 2) {
-  //   const defend = getOpposite(closest.relativeToMe);
-  //   if (defend && safeMoves.includes(defend)) {
-  //     return { move: defend, shout: "DEFEND" };
-  //   }
-  // }
+  let nextMove =
+    candidateMoves[Math.floor(Math.random() * candidateMoves.length)];
 
   if (closestFood !== undefined) {
     const preferredMoves: string[] = [];
@@ -135,9 +156,8 @@ export function move(gameState: GameState): MoveResponse {
       preferredMoves.push("down");
     }
 
-    // Choose a preferred move if it's safe
-    const safePreferredMoves = preferredMoves.filter((move) =>
-      safeMoves.includes(move)
+    const safePreferredMoves = preferredMoves.filter((m) =>
+      candidateMoves.includes(m)
     );
     if (safePreferredMoves.length > 0) {
       nextMove =
