@@ -127,7 +127,86 @@ export function move(gameState: GameState): MoveResponse {
   );
   const candidateMoves = nonHazardMoves.length > 0 ? nonHazardMoves : safeMoves;
 
-  // Step 5: Move towards the closest food
+  // Step 5: Attack mode - if we are strictly the longest snake, hunt a shorter opponent
+  // Abort automatically each turn if we are no longer the longest (re-evaluated every call)
+  const isStrictlyLongest = gameState.board.snakes
+    .filter((s) => s.id !== gameState.you.id)
+    .every((s) => s.length < myLength);
+
+  const ATTACK_RANGE = 5;
+  let attackTarget: Coord | undefined;
+
+  if (isStrictlyLongest) {
+    // Find the closest shorter snake within attack range
+    let closestOpponent: (typeof gameState.board.snakes)[0] | undefined;
+    let minAttackDist = Infinity;
+
+    gameState.board.snakes
+      .filter((s) => s.id !== gameState.you.id && s.length < myLength)
+      .forEach((opp) => {
+        const dist = manhattenDistance(myHead, opp.head);
+        if (dist <= ATTACK_RANGE && dist < minAttackDist) {
+          minAttackDist = dist;
+          closestOpponent = opp;
+        }
+      });
+
+    if (closestOpponent !== undefined) {
+      const oppHead = closestOpponent.head;
+
+      if (closestOpponent.body.length >= 2) {
+        // Predict next head position based on current movement direction (head minus neck)
+        const oppNeck = closestOpponent.body[1];
+        const dx = oppHead.x - oppNeck.x;
+        const dy = oppHead.y - oppNeck.y;
+        const predictedHead: Coord = { x: oppHead.x + dx, y: oppHead.y + dy };
+
+        // Use predicted head if it is on the board, otherwise target current head
+        attackTarget =
+          predictedHead.x >= 0 &&
+          predictedHead.x < boardWidth &&
+          predictedHead.y >= 0 &&
+          predictedHead.y < boardHeight
+            ? predictedHead
+            : oppHead;
+      } else {
+        attackTarget = oppHead;
+      }
+
+      console.log(
+        `MOVE ${gameState.turn}: ATTACK MODE - targeting (${attackTarget.x},${attackTarget.y})`
+      );
+    }
+  }
+
+  let nextMove =
+    candidateMoves[Math.floor(Math.random() * candidateMoves.length)];
+
+  if (attackTarget !== undefined) {
+    const attackMoves: string[] = [];
+    if (myHead.x < attackTarget.x) {
+      attackMoves.push("right");
+    } else if (myHead.x > attackTarget.x) {
+      attackMoves.push("left");
+    }
+    if (myHead.y < attackTarget.y) {
+      attackMoves.push("up");
+    } else if (myHead.y > attackTarget.y) {
+      attackMoves.push("down");
+    }
+
+    const safeAttackMoves = attackMoves.filter((m) =>
+      candidateMoves.includes(m)
+    );
+    if (safeAttackMoves.length > 0) {
+      nextMove =
+        safeAttackMoves[Math.floor(Math.random() * safeAttackMoves.length)];
+      console.log(`MOVE ${gameState.turn}: ${nextMove} (ATTACK)`);
+      return { move: nextMove, shout: "Attacking!" };
+    }
+  }
+
+  // Step 6: Move towards the closest food
   const food = gameState.board.food;
   let closestFood: Coord | undefined;
   let minDistance = Infinity;
@@ -139,9 +218,6 @@ export function move(gameState: GameState): MoveResponse {
       closestFood = f;
     }
   });
-
-  let nextMove =
-    candidateMoves[Math.floor(Math.random() * candidateMoves.length)];
 
   if (closestFood !== undefined) {
     const preferredMoves: string[] = [];
